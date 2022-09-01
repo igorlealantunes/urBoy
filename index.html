@@ -1,0 +1,147 @@
+<!doctype html>
+<html>
+<head>
+    <script src="https://pixijs.download/release/pixi.min.js"></script>
+</head>
+<body>
+<div>
+    MOVE: <b>WASD</b> | Attcks: <b>J</b> & <b>K</b>
+</div>
+<script type="module">
+
+    import { Enemy } from "/models/Enemy.js"
+    import { Fighter } from "/models/Fighter.js"
+    import { Life } from "./models/Life.js"
+
+    import { ActionHandler } from "/utils/ActionHandler.js"
+    import { InfoPrinter } from "./utils/InfoPrinter.js"
+
+
+    setUp()
+
+    const fighter = new Fighter()
+
+    const appData = {
+        projectiles: [],
+        enemies: [],
+        lifePotions: [],
+        deadEnemies: [],
+    }
+
+    const actionHandler = new ActionHandler({ fighter, appData })
+    const infoPrinter = new InfoPrinter()
+
+    app.stage.addChild(fighter.animatedSprite);
+
+    let score = 0
+
+    app.ticker.add((delta) => {
+
+        // console.log({ delta, appData })
+        checkArenaBounds()
+        checkIsDead()
+        processEnemies()
+        processProjectiles()
+        createEnemies()
+        handleLifePotions()
+
+        infoPrinter.updateScore({ score })
+        infoPrinter.updateLife({ life: fighter.life })
+    });
+
+    document.addEventListener('keydown', (key) => {
+        actionHandler.handle(key)
+    });
+
+    function setUp () {
+        window.app = new PIXI.Application({ width: 800, height: 800, antialias: true });
+
+        app.loader.add('firen', './firen.png')
+        app.loader.add('enemy', './enemy.png')
+        app.loader.add('doom-face', './doom-face.png')
+        app.loader.add('potion', './potion.png')
+
+        document.body.appendChild(app.view);
+
+        app.stage.addChild(PIXI.Sprite.from('./arena.png'))
+    }
+
+    function checkArenaBounds () {
+        const offset = 65
+
+        for (const thing of [fighter, ...appData.enemies]) {
+            const x = thing.animatedSprite.x
+            const y = thing.animatedSprite.y
+
+            if (x - offset < 0) {
+                thing.animatedSprite.x = offset
+            } else if (x + offset > app.screen.width) {
+                thing.animatedSprite.x = app.screen.width - offset
+            }
+
+            if (y - offset < 0) {
+                thing.animatedSprite.y = offset
+            } else if (y + offset > app.screen.height) {
+                thing.animatedSprite.y = app.screen.height - offset
+            }
+        }
+
+    }
+    function checkIsDead () {
+        if (fighter.life > 0) return
+
+        infoPrinter.gameOver()
+        actionHandler.setIsListening(false)
+    }
+    function processEnemies () {
+        for (const enemy of appData.enemies) {
+            if (enemy.life <= 0 && !enemy.isDead) { // just killed one
+                score += enemy.scoreAmount
+                enemy.killMe()
+                appData.deadEnemies.push(enemy)
+                continue
+            }
+            enemy.move(fighter)
+            if (enemy.isHitting({ thing: fighter })) {
+                fighter.sufferDamage({ lifeAmount: enemy.damage, fromThing: enemy })
+            }
+        }
+        appData.enemies = appData.enemies.filter(e => e.life > 0)
+    }
+    function createEnemies () {
+        if (appData.enemies.length < 10 && Math.random() < 0.01) {
+            const e = new Enemy()
+            appData.enemies.push(e)
+            app.stage.addChild(e.animatedSprite)
+        }
+    }
+    function handleLifePotions () {
+        appData.lifePotions = appData.lifePotions.filter(e => !e.isUsed)
+
+        if (appData.lifePotions.length < 5 && Math.random() < 0.001) {
+            const e = new Life({ x: 80 + Math.random() * app.screen.width, y: 80 + Math.random() * app.screen.height })
+            appData.lifePotions.push(e)
+            app.stage.addChild(e.animatedSprite)
+        }
+        for (const p of appData.lifePotions) {
+            if (p.isHitting({ thing: fighter })) {
+                fighter.gainLife({ lifeAmount: p.lifeAmount })
+                p.destroyPotion({})
+            }
+        }
+    }
+    function processProjectiles () {
+        for (const projectile of appData.projectiles) {
+            projectile.move()
+            for (const enemy of appData.enemies) {
+                if (projectile.isHitting({ thing: enemy })) {
+                    enemy.sufferDamage({ fighter: fighter, lifeAmount: projectile.damage })
+                    projectile.explode()
+                }
+            }
+        }
+        appData.projectiles = appData.projectiles.filter(p => !p.hasExploded)
+    }
+</script>
+</body>
+</html>
